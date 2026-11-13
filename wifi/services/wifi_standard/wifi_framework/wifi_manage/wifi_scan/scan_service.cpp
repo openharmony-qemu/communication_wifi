@@ -69,7 +69,7 @@ ScanService::~ScanService()
     WIFI_LOGI("Enter ~ScanService.\n");
 
     if (pScanMonitor != nullptr) {
-        pScanMonitor->SetScanStateMachine(nullptr);
+        // The monitor retires its callback before its state machine is destroyed.
         delete pScanMonitor;
         pScanMonitor = nullptr;
     }
@@ -111,12 +111,13 @@ bool ScanService::InitScanService(const IScanSerivceCallbacks &scanSerivceCallba
         return false;
     }
 
+    // Publish only a fully initialized callback owner to the WPA event thread.
+    pScanMonitor->SetScanStateMachine(pScanStateMachine);
     if (!pScanMonitor->InitScanMonitor()) {
         WIFI_LOGE("InitScanMonitor failed.\n");
         return false;
     }
 
-    pScanMonitor->SetScanStateMachine(pScanStateMachine);
     int delayMs = 100;
     pScanStateMachine->MessageExecutedLater(static_cast<int>(CMD_SCAN_PREPARE), delayMs);
     GetScanControlInfo();

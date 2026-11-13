@@ -204,7 +204,7 @@ void HandleSyncErrCode(const napi_env &env, int32_t errCode, int32_t sysCap)
     std::string errMsg = GetNapiErrMsg(env, errCode, sysCap);
     int32_t errCodeInfo = GetNapiErrCode(env, errCode, sysCap);
     if (errMsg != "") {
-        napi_throw_error(env, std::to_string(errCodeInfo).c_str(), errMsg.c_str());
+        napi_throw_business_error(env, errCodeInfo, errMsg.c_str());
     }
 }
 

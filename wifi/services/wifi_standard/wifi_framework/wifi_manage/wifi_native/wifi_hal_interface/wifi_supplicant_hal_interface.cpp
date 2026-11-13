@@ -72,7 +72,7 @@ WifiErrorNo WifiSupplicantHalInterface::RequestToSupplicant(const std::string &r
 
 WifiErrorNo WifiSupplicantHalInterface::RegisterSupplicantEventCallback(SupplicantEventCallback &callback)
 {
-#ifdef HDI_CHIP_INTERFACE_SUPPORT
+#if defined(HDI_CHIP_INTERFACE_SUPPORT) || defined(HDI_WPA_INTERFACE_SUPPORT)
     std::lock_guard<std::mutex> lock(mSupplicantHalMutex);
     mCallback = callback;
     return WIFI_HAL_OPT_OK;
@@ -82,7 +82,7 @@ WifiErrorNo WifiSupplicantHalInterface::RegisterSupplicantEventCallback(Supplica
 
 WifiErrorNo WifiSupplicantHalInterface::UnRegisterSupplicantEventCallback(void)
 {
-#ifdef HDI_CHIP_INTERFACE_SUPPORT
+#if defined(HDI_CHIP_INTERFACE_SUPPORT) || defined(HDI_WPA_INTERFACE_SUPPORT)
     std::lock_guard<std::mutex> lock(mSupplicantHalMutex);
     mCallback.onScanNotify = nullptr;
     return WIFI_HAL_OPT_OK;

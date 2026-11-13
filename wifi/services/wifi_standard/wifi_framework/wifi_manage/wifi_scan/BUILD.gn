@@ -113,6 +113,9 @@ if (defined(ohos_lite)) {
     ]
 
     defines = [ "STA_INSTANCE_MAX_NUM=$wifi_feature_with_sta_num" ]
+    if (!wifi_feature_with_hdi_chip_supported) {
+      defines += [ "WIFI_SOFTWARE_SCAN_BACKEND" ]
+    }
     if (wifi_feature_with_local_security_detect) {
       defines += [ "WIFI_LOCAL_SECURITY_DETECT_ENABLE" ]
     }

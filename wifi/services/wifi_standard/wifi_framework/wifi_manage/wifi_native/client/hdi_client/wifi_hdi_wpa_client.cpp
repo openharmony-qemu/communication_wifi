@@ -19,6 +19,8 @@
 #include <codecvt>
 #include <fstream>
 #include <iostream>
+#include <algorithm>
+#include <sstream>
 #include <locale>
 #include <securec.h>
 #include <unistd.h>
@@ -115,9 +117,102 @@ WifiErrorNo WifiHdiWpaClient::GetStaDeviceMacAddress(std::string &mac, const cha
     return err;
 }
 
+// WPA omits disabled channels and marks passive-only/DFS channels. This API
+// returns scan frequencies, not permission to initiate radiation or run an AP;
+// supplicant and cfg80211 remain authoritative for NO_IR and regulatory rules.
+static bool ParseWpaScanFrequencies(const std::string &reply, int band, std::vector<int> &frequencies)
+{
+    if (reply.size() < 2 || reply.compare(reply.size() - 2, 2, "\n\n") != 0) {
+        return false;
+    }
+    std::istringstream document(reply);
+    std::string line;
+    std::string mode;
+    bool inBlock = false;
+    bool sawMode = false;
+    size_t count = 0;
+    std::vector<int> parsed;
+    while (std::getline(document, line)) {
+        if (++count > 512) {
+            return false;
+        }
+        if (line.empty()) {
+            inBlock = false;
+            continue;
+        }
+        if (line == "Mode[A] Channels:" || line == "Mode[B] Channels:" ||
+            line == "Mode[G] Channels:" || line == "Mode[AD] Channels:") {
+            if (inBlock) {
+                return false;
+            }
+            mode = line;
+            inBlock = true;
+            sawMode = true;
+            continue;
+        }
+        if (!inBlock || line.front() != ' ') {
+            return false;
+        }
+        std::istringstream row(line);
+        int channel = 0;
+        int frequency = 0;
+        std::string equals;
+        std::string unit;
+        if (!(row >> channel >> equals >> frequency >> unit) || equals != "=" || unit != "MHz" ||
+            channel <= 0 || channel > 4096 || frequency <= 0 || frequency > 100000) {
+            return false;
+        }
+        std::string flag;
+        bool noIr = false;
+        bool dfs = false;
+        while (row >> flag) {
+            if (flag == "(NO_IR)" && !noIr && !dfs) {
+                noIr = true;
+            } else if (flag == "(DFS)" && !dfs) {
+                dfs = true;
+            } else {
+                return false;
+            }
+        }
+        const bool is24 = frequency >= 2400 && frequency < 2500;
+        const bool is5 = frequency >= 4900 && frequency < 5925;
+        if ((mode == "Mode[B] Channels:" || mode == "Mode[G] Channels:") && (!is24 || dfs)) {
+            return false;
+        }
+        if ((is24 && mode != "Mode[B] Channels:" && mode != "Mode[G] Channels:") ||
+            (is5 && mode != "Mode[A] Channels:")) {
+            return false;
+        }
+        // In particular a 6 GHz Mode[A] block must never become a 5 GHz list.
+        if ((is24 && (band & 1)) || (is5 && ((dfs && (band & 4)) || (!dfs && (band & 2))))) {
+            parsed.push_back(frequency);
+        }
+    }
+    if (!sawMode || inBlock) {
+        return false;
+    }
+    std::sort(parsed.begin(), parsed.end());
+    parsed.erase(std::unique(parsed.begin(), parsed.end()), parsed.end());
+    frequencies = std::move(parsed);
+    return true;
+}
+
 WifiErrorNo WifiHdiWpaClient::GetSupportFrequencies(int band, std::vector<int> &frequencies)
 {
-    return WIFI_HAL_OPT_NOT_SUPPORT;
+    // ScanBandType's six defined non-empty combinations; 0 is unspecified.
+    if (band != 1 && band != 2 && band != 3 && band != 4 && band != 6 && band != 7) {
+        return WIFI_HAL_OPT_INVALID_PARAM;
+    }
+    char reply[2048] = {0};
+    if (HdiWpaGetMloLinkedInfo(GetHdiStaIfaceName(INSTID_WLAN0), "GET_CAPABILITY freq",
+        reply, sizeof(reply)) != WIFI_HAL_OPT_OK) {
+        return WIFI_HAL_OPT_FAILED;
+    }
+    const size_t length = strnlen(reply, sizeof(reply));
+    if (length >= sizeof(reply) - 1 || !ParseWpaScanFrequencies(std::string(reply, length), band, frequencies)) {
+        return WIFI_HAL_OPT_FAILED;
+    }
+    return WIFI_HAL_OPT_OK;
 }
 
 WifiErrorNo WifiHdiWpaClient::SetConnectMacAddr(const std::string &mac)
@@ -127,7 +222,52 @@ WifiErrorNo WifiHdiWpaClient::SetConnectMacAddr(const std::string &mac)
 
 WifiErrorNo WifiHdiWpaClient::Scan(const WifiHalScanParam &scanParam)
 {
-    return HdiWpaStaScan();
+    // WPA's control protocol supports an ordinary active scan, not chip-specific
+    // scheduling hints. Do not silently drop an unsupported scan style.
+    if (scanParam.scanStyle != 0) {
+        return WIFI_HAL_OPT_NOT_SUPPORT;
+    }
+    constexpr size_t maxCommandLength = 1024;
+    constexpr size_t maxSsidLength = 32;
+    constexpr size_t maxFrequencyCount = 256;
+    constexpr size_t maxSsidCount = 16;
+    if (scanParam.scanFreqs.size() > maxFrequencyCount ||
+        scanParam.hiddenNetworkSsid.size() > maxSsidCount) {
+        return WIFI_HAL_OPT_INVALID_PARAM;
+    }
+    std::string command = "SCAN";
+    for (size_t index = 0; index < scanParam.scanFreqs.size(); ++index) {
+        const int frequency = scanParam.scanFreqs[index];
+        if (frequency <= 0) {
+            return WIFI_HAL_OPT_INVALID_PARAM;
+        }
+        command += (index == 0 ? " freq=" : ",");
+        command += std::to_string(frequency);
+    }
+    constexpr char hex[] = "0123456789abcdef";
+    for (const auto &ssid : scanParam.hiddenNetworkSsid) {
+        if (ssid.empty() || ssid.size() > maxSsidLength) {
+            return WIFI_HAL_OPT_INVALID_PARAM;
+        }
+        command += " ssid ";
+        for (unsigned char byte : ssid) {
+            command += hex[byte >> 4];
+            command += hex[byte & 0x0f];
+        }
+    }
+    if (command.size() > maxCommandLength) {
+        return WIFI_HAL_OPT_INVALID_PARAM;
+    }
+    // This existing helper uses IWpaInterface::GetWpaStaData, the generic
+    // request/reply control interface. STA_SHELL does not support SCAN.
+    // Keep both the HDI error and the actual supplicant reply authoritative.
+    char reply[2048] = {0};
+    const char *ifaceName = GetHdiStaIfaceName(INSTID_WLAN0);
+    if (HdiWpaGetMloLinkedInfo(ifaceName, command.c_str(), reply, sizeof(reply)) != WIFI_HAL_OPT_OK) {
+        return WIFI_HAL_OPT_FAILED;
+    }
+    return strcmp(reply, "OK\n") == 0 || strcmp(reply, "OK") == 0 ?
+        WIFI_HAL_OPT_OK : WIFI_HAL_OPT_FAILED;
 }
 
 WifiErrorNo WifiHdiWpaClient::QueryScanInfos(std::vector<InterScanInfo> &scanInfos)

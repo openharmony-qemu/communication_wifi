@@ -79,6 +79,7 @@ private:
 
 private:
     int m_instId;
+    bool mRegistered {false};
 };
 }  // namespace Wifi
 }  // namespace OHOS

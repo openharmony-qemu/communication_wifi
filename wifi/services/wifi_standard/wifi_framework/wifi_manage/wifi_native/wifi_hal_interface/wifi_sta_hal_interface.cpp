@@ -151,6 +151,12 @@ WifiErrorNo WifiStaHalInterface::GetSupportFrequencies(const std::string &ifaceN
         return WIFI_HAL_OPT_FAILED;
     }
     return WIFI_HAL_OPT_OK;
+#elif defined(HDI_WPA_INTERFACE_SUPPORT)
+    CHECK_NULL_AND_RETURN(mHdiWpaClient, WIFI_HAL_OPT_FAILED);
+    if (ifaceName != WifiConfigCenter::GetInstance().GetStaIfaceName(INSTID_WLAN0)) {
+        return WIFI_HAL_OPT_NOT_SUPPORT;
+    }
+    return mHdiWpaClient->GetSupportFrequencies(band, frequencies);
 #endif
     return WIFI_HAL_OPT_FAILED;
 }
@@ -208,6 +214,12 @@ WifiErrorNo WifiStaHalInterface::Scan(const std::string &ifaceName, const WifiHa
         return WIFI_HAL_OPT_FAILED;
     }
     return WIFI_HAL_OPT_OK;
+#elif defined(HDI_WPA_INTERFACE_SUPPORT)
+    CHECK_NULL_AND_RETURN(mHdiWpaClient, WIFI_HAL_OPT_FAILED);
+    if (ifaceName != WifiConfigCenter::GetInstance().GetStaIfaceName(INSTID_WLAN0)) {
+        return WIFI_HAL_OPT_NOT_SUPPORT;
+    }
+    return mHdiWpaClient->Scan(scanParam);
 #endif
     return WIFI_HAL_OPT_FAILED;
 }
@@ -328,6 +340,12 @@ WifiErrorNo WifiStaHalInterface::QueryScanInfos(const std::string &ifaceName, st
     }
     ParseScanInfo(scanResultsInfo, scanInfos);
     return WIFI_HAL_OPT_OK;
+#elif defined(HDI_WPA_INTERFACE_SUPPORT)
+    CHECK_NULL_AND_RETURN(mHdiWpaClient, WIFI_HAL_OPT_FAILED);
+    if (ifaceName != WifiConfigCenter::GetInstance().GetStaIfaceName(INSTID_WLAN0)) {
+        return WIFI_HAL_OPT_NOT_SUPPORT;
+    }
+    return mHdiWpaClient->QueryScanInfos(scanInfos);
 #endif
     return WIFI_HAL_OPT_FAILED;
 }

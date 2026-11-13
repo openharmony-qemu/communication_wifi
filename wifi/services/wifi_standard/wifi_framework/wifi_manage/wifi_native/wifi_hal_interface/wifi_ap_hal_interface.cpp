@@ -18,6 +18,9 @@
 #include "hal_device_manage.h"
 #include "wifi_log.h"
 #include "wifi_error_no.h"
+#ifdef WIFI_SOFTWARE_AP_REGULATORY_BACKEND
+#include "wifi_software_regulatory.h"
+#endif
 
 #undef LOG_TAG
 #define LOG_TAG "WifiApHalInterface"
@@ -192,6 +195,8 @@ WifiErrorNo WifiApHalInterface::SetWifiCountryCode(const std::string &ifaceName,
         return WIFI_HAL_OPT_FAILED;
     }
     return WIFI_HAL_OPT_OK;
+#elif defined(WIFI_SOFTWARE_AP_REGULATORY_BACKEND)
+    return OhosQemuSoftwareRegulatory::SetAndReadBack(ifaceName, code) ? WIFI_HAL_OPT_OK : WIFI_HAL_OPT_FAILED;
 #endif
     return WIFI_HAL_OPT_FAILED;
 }

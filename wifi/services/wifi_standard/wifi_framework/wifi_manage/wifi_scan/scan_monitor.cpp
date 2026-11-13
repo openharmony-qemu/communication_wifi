@@ -24,11 +24,16 @@ ScanMonitor::ScanMonitor(int instId) : pScanStateMachine(nullptr), m_instId(inst
 {}
 
 ScanMonitor::~ScanMonitor()
-{}
+{
+    UnInitScanMonitor();
+}
 
 bool ScanMonitor::InitScanMonitor()
 {
     WIFI_LOGI("Enter ScanMonitor::InitScanMonitor.");
+    if (mRegistered) {
+        return true;
+    }
 
     SupplicantEventCallback eventCallback;
     eventCallback.onScanNotify = [this](int result) { this->ReceiveScanEventFromIdl(result); };
@@ -37,15 +42,21 @@ bool ScanMonitor::InitScanMonitor()
         return false;
     }
 
+    mRegistered = true;
     return true;
 }
 
 void ScanMonitor::UnInitScanMonitor()
 {
     WIFI_LOGI("Enter ScanMonitor::UnInitScanMonitor.");
+    if (!mRegistered) {
+        return;
+    }
     if (WifiSupplicantHalInterface::GetInstance().UnRegisterSupplicantEventCallback() != WIFI_HAL_OPT_OK) {
         WIFI_LOGE("UnRegisterSupplicantEventCallback failed.");
+        return;
     }
+    mRegistered = false;
     return;
 }
 

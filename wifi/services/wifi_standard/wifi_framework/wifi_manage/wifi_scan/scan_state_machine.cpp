@@ -124,7 +124,13 @@ bool ScanStateMachine::InitScanStateMachine()
     WIFI_LOGI("Enter InitScanStateMachine.\n");
 
     /* init supportHwPnoFlag value */
+#ifdef WIFI_SOFTWARE_SCAN_BACKEND
+    // The WPA HDI has no PNO offload API. Use the existing timed software path
+    // instead of accepting a persisted hardware-only configuration.
+    supportHwPnoFlag = false;
+#else
     supportHwPnoFlag = WifiSettings::GetInstance().GetSupportHwPnoFlag(m_instId);
+#endif
 
     if (!InitialStateMachine("ScanStateMachine")) {
         WIFI_LOGE("Initial StateMachine failed.\n");

@@ -19,6 +19,8 @@
 #include "wifi_settings.h"
 #ifdef HDI_CHIP_INTERFACE_SUPPORT
 #include "hal_device_manage.h"
+#elif defined(WIFI_SOFTWARE_SCAN_BACKEND)
+#include "wifi_sta_hal_interface.h"
 #endif
 #include "wifi_country_code_manager.h"
 
@@ -60,6 +62,10 @@ WifiChannelHelper &WifiChannelHelper::GetInstance()
 
 int WifiChannelHelper::GetValidBands(std::vector<BandType> &bands)
 {
+#ifdef WIFI_SOFTWARE_SCAN_BACKEND
+    // Construction may precede WPA startup; regulatory updates are asynchronous.
+    UpdateValidFreqs();
+#endif
     std::unique_lock<std::mutex> lock(mMutex);
     auto it = mValidChannels.find(BandType::BAND_2GHZ);
     if (it != mValidChannels.end() && it->second.size() > 0) {
@@ -89,6 +95,9 @@ int WifiChannelHelper::SetValidChannels(const ChannelsTable &channelsInfo)
 
 int WifiChannelHelper::GetValidChannels(ChannelsTable &channelsInfo)
 {
+#ifdef WIFI_SOFTWARE_SCAN_BACKEND
+    UpdateValidFreqs();
+#endif
     std::unique_lock<std::mutex> lock(mMutex);
     channelsInfo = mValidChannels;
     return 0;
@@ -110,6 +119,10 @@ void WifiChannelHelper::UpdateValidFreqs()
             WIFI_LOGE("ap iface get 2g frequencies failed.");
         }
     }
+#elif defined(WIFI_SOFTWARE_SCAN_BACKEND)
+    if (WifiStaHalInterface::GetInstance().GetSupportFrequencies(ifaceName, band, freqs2G) != WIFI_HAL_OPT_OK) {
+        WIFI_LOGE("WPA get 2g frequencies failed.");
+    }
 #endif
     band = static_cast<int>(ScanBandType::SCAN_BAND_5_GHZ);
 #ifdef HDI_CHIP_INTERFACE_SUPPORT
@@ -119,6 +132,10 @@ void WifiChannelHelper::UpdateValidFreqs()
             WIFI_LOGE("ap iface get 5g frequencies failed.");
         }
     }
+#elif defined(WIFI_SOFTWARE_SCAN_BACKEND)
+    if (WifiStaHalInterface::GetInstance().GetSupportFrequencies(ifaceName, band, freqs5G) != WIFI_HAL_OPT_OK) {
+        WIFI_LOGE("WPA get 5g frequencies failed.");
+    }
 #endif
     band = static_cast<int>(ScanBandType::SCAN_BAND_5_GHZ_DFS_ONLY);
 #ifdef HDI_CHIP_INTERFACE_SUPPORT
@@ -127,6 +144,10 @@ void WifiChannelHelper::UpdateValidFreqs()
         if (!HalDeviceManager::GetInstance().GetFrequenciesByBand(apIfaceName, band, freqsDfs)) {
             WIFI_LOGE("ap iface get 5g DFS frequencies failed.");
         }
+    }
+#elif defined(WIFI_SOFTWARE_SCAN_BACKEND)
+    if (WifiStaHalInterface::GetInstance().GetSupportFrequencies(ifaceName, band, freqsDfs) != WIFI_HAL_OPT_OK) {
+        WIFI_LOGE("WPA get DFS frequencies failed.");
     }
 #endif
     mValidFreqs[ScanBandType::SCAN_BAND_24_GHZ] = freqs2G;
@@ -141,7 +162,29 @@ void WifiChannelHelper::UpdateValidFreqs()
 
 bool WifiChannelHelper::GetAvailableScanFreqs(ScanBandType band, std::vector<int32_t>& freqs)
 {
+#ifdef WIFI_SOFTWARE_SCAN_BACKEND
+    UpdateValidFreqs();
+#endif
     std::unique_lock<std::mutex> lock(mMutex);
+#ifdef WIFI_SOFTWARE_SCAN_BACKEND
+    // A missing/failed band table must not silently become an all-band scan.
+    // Do not let a caller's old output make an unavailable band look usable.
+    freqs.clear();
+    const int mask = static_cast<int>(band);
+    if (mask != 1 && mask != 2 && mask != 3 && mask != 4 && mask != 6 && mask != 7) {
+        return false;
+    }
+    for (const auto part : {ScanBandType::SCAN_BAND_24_GHZ, ScanBandType::SCAN_BAND_5_GHZ,
+                           ScanBandType::SCAN_BAND_5_GHZ_DFS_ONLY}) {
+        if ((mask & static_cast<int>(part)) != 0) {
+            const auto &supported = mValidFreqs[part];
+            freqs.insert(freqs.end(), supported.begin(), supported.end());
+        }
+    }
+    std::sort(freqs.begin(), freqs.end());
+    freqs.erase(std::unique(freqs.begin(), freqs.end()), freqs.end());
+    return !freqs.empty();
+#else
     switch (band) {
         case ScanBandType::SCAN_BAND_24_GHZ: {
             freqs.assign(mValidFreqs[ScanBandType::SCAN_BAND_24_GHZ].begin(),
@@ -185,6 +228,7 @@ bool WifiChannelHelper::GetAvailableScanFreqs(ScanBandType band, std::vector<int
             WIFI_LOGE("bandType(%{public}d) is error.\n", band);
             return false;
     }
+#endif
 }
 
 bool WifiChannelHelper::IsFreqDbac(int freqA, int freqB)

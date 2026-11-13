@@ -121,6 +121,7 @@
                 "image_framework",
                 "init",
                 "ipc",
+                "libnl",
                 "napi",
                 "netmanager_base",
                 "netmanager_ext",

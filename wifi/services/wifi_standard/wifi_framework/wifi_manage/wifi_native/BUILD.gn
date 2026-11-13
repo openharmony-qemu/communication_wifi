@@ -207,6 +207,9 @@ if (defined(ohos_lite)) {
     if (wifi_feature_with_hdi_chip_supported) {
       defines += [ "HDI_CHIP_INTERFACE_SUPPORT" ]
       external_deps += [ "drivers_interface_wlan:libchip_proxy_2.0" ]
+    } else if (wifi_feature_with_hdi_wpa_supported) {
+      defines += [ "WIFI_SOFTWARE_AP_REGULATORY_BACKEND" ]
+      external_deps += [ "libnl:libnl_share" ]
     }
 
     cflags = memory_optimization_cflags

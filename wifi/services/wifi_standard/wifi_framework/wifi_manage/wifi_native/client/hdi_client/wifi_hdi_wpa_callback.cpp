@@ -401,11 +401,8 @@ int32_t OnEventScanResult(struct IWpaCallback *self,
         return 1;
     }
 
-    const OHOS::Wifi::SupplicantEventCallback &cbk =
-        OHOS::Wifi::WifiSupplicantHalInterface::GetInstance().GetCallbackInst();
-    if (cbk.onScanNotify) {
-        cbk.onScanNotify(HAL_SINGLE_SCAN_OVER_OK);
-    }
+    // Serialize delivery with unregister: ScanMonitor callbacks capture their owner.
+    OHOS::Wifi::WifiSupplicantHalInterface::GetInstance().NotifyScanResultEvent(HAL_CMD_NEW_SCAN_RESULTS);
     return 0;
 }
 
